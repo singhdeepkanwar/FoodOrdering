@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -13,6 +14,7 @@ from apps.api.serializers import RegisterSerializer, UserSerializer
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@transaction.atomic
 def register(request):
     serializer = RegisterSerializer(data=request.data)
     if not serializer.is_valid():

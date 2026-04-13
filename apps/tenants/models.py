@@ -19,7 +19,13 @@ class Restaurant(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.name)
+            base = slugify(self.name) or "restaurant"
+            slug = base
+            n = 1
+            while Restaurant.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                n += 1
+                slug = f"{base}-{n}"
+            self.slug = slug
         super().save(*args, **kwargs)
 
     def __str__(self):
