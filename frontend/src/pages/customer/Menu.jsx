@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getCustomerMenu, getCustomerSession, customerPlaceOrder } from "../../api";
-import { ShoppingCart, X, FileText, User } from "lucide-react";
+import { ShoppingCart, X, FileText, User, RefreshCw } from "lucide-react";
 
 const VEG = "border-green-600";
 const NONVEG = "border-red-600";
@@ -27,23 +27,45 @@ export default function CustomerMenu() {
   const [vegOnly, setVegOnly] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [showBill, setShowBill] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const billPollRef = useRef(null);
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [placing, setPlacing] = useState(false);
 
+  const fetchSession = async () => {
+    const sid = localStorage.getItem(`session_${qrToken}`);
+    if (!sid) return;
+    setSessionLoading(true);
+    try {
+      const { data } = await getCustomerSession(qrToken);
+      setSession(data);
+    } catch {
+      localStorage.removeItem(`session_${qrToken}`);
+      setSession(null);
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
   useEffect(() => {
     getCustomerMenu(qrToken)
       .then(({ data }) => setMenuData(data))
       .catch(() => toast.error("Table not found or restaurant is closed."));
-
-    const sid = localStorage.getItem(`session_${qrToken}`);
-    if (sid) {
-      getCustomerSession(qrToken)
-        .then(({ data }) => setSession(data))
-        .catch(() => localStorage.removeItem(`session_${qrToken}`));
-    }
+    fetchSession();
   }, [qrToken]);
+
+  // Poll session every 8s while bill drawer is open
+  useEffect(() => {
+    if (showBill) {
+      fetchSession();
+      billPollRef.current = setInterval(fetchSession, 8000);
+    } else {
+      clearInterval(billPollRef.current);
+    }
+    return () => clearInterval(billPollRef.current);
+  }, [showBill]);
 
   const addToCart = (item) =>
     setCart((c) => ({ ...c, [item.id]: { ...item, qty: (c[item.id]?.qty || 0) + 1 } }));
@@ -94,6 +116,8 @@ export default function CustomerMenu() {
       setSpecialInstructions("");
       setShowGuestModal(false);
       toast.success("Order placed!");
+      // Refresh session so bill reflects the new order when user returns
+      fetchSession();
       navigate(`/t/${qrToken}/confirmation/${data.id}`);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to place order.");
@@ -143,6 +167,19 @@ export default function CustomerMenu() {
           </button>
         </div>
       </header>
+
+      {/* Active session banner */}
+      {session && (
+        <div
+          onClick={() => setShowBill(true)}
+          className="bg-orange-50 border-b border-orange-100 px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-orange-100"
+        >
+          <span className="text-xs text-orange-700 font-medium">
+            {session.orders?.length || 0} order{session.orders?.length !== 1 ? "s" : ""} · ₹{session.running_total} running total
+          </span>
+          <span className="text-xs text-orange-500 font-semibold">View Bill →</span>
+        </div>
+      )}
 
       {/* Veg filter */}
       <div className="px-4 py-2 flex items-center gap-2">
@@ -297,7 +334,13 @@ export default function CustomerMenu() {
           <div className="relative bg-white w-full max-w-sm h-full flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <h2 className="font-semibold">My Bill</h2>
-              <button onClick={() => setShowBill(false)}><X size={18} /></button>
+              <div className="flex items-center gap-2">
+                <button onClick={fetchSession} title="Refresh"
+                  className={`text-gray-400 hover:text-orange-500 ${sessionLoading ? "animate-spin" : ""}`}>
+                  <RefreshCw size={15} />
+                </button>
+                <button onClick={() => setShowBill(false)}><X size={18} /></button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               {!session?.orders?.length ? (
@@ -314,11 +357,20 @@ export default function CustomerMenu() {
                       </div>
                       <span className="text-sm font-medium">₹{order.total_amount}</span>
                     </div>
-                    <ul className="text-sm text-gray-600 space-y-0.5">
+                    <ul className="text-sm text-gray-600 space-y-0.5 mb-2">
                       {order.items.map((item) => (
                         <li key={item.id}>{item.quantity}× {item.menu_item_name}</li>
                       ))}
                     </ul>
+                    {order.status !== "served" && order.status !== "cancelled" && (
+                      <Link
+                        to={`/t/${qrToken}/track/${order.id}`}
+                        className="text-xs text-orange-500 font-medium hover:underline"
+                        onClick={() => setShowBill(false)}
+                      >
+                        Track this order →
+                      </Link>
+                    )}
                   </div>
                 ))
               )}
@@ -329,6 +381,7 @@ export default function CustomerMenu() {
                   <span>Running Total</span>
                   <span className="text-orange-600">₹{session.running_total}</span>
                 </div>
+                <p className="text-xs text-gray-400 mt-1">Updates every 8 seconds</p>
               </div>
             )}
           </div>
