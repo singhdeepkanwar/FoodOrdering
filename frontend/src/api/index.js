@@ -44,6 +44,7 @@ export const getWaiterTables = () => api.get("/waiter/tables/");
 export const getWaiterTableDetail = (id) => api.get(`/waiter/tables/${id}/`);
 export const waiterAddItems = (id, data) => api.post(`/waiter/tables/${id}/add-items/`, data);
 export const waiterMarkServed = (id) => api.post(`/waiter/orders/${id}/mark-served/`);
+export const waiterCloseTable = (id) => api.post(`/waiter/tables/${id}/close/`);
 
 // ── Customer (public) — uses session header ───────────────────────────────────
 import axios from "axios";

@@ -11,7 +11,6 @@ from apps.api.serializers import (
 from apps.menu.models import MenuCategory, MenuItem
 from apps.orders.models import Order, OrderItem, TableSession
 from apps.tables.models import Table
-from apps.tenants.models import Restaurant
 
 
 def _get_table(qr_token):
@@ -54,7 +53,7 @@ def customer_menu(request, qr_token):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def customer_checkin(request, qr_token):
-    """Create or retrieve a TableSession. Returns session_id to store in localStorage."""
+    """Create or retrieve a TableSession. Name and phone are optional."""
     table = _get_table(qr_token)
     if not table:
         return Response({"detail": "Table not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -62,29 +61,22 @@ def customer_checkin(request, qr_token):
     name = (request.data.get("customer_name") or "").strip()
     phone = (request.data.get("customer_phone") or "").strip()
 
-    if not name or not phone:
-        return Response(
-            {"detail": "Name and phone number are required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    if len(phone) < 10:
-        return Response(
-            {"detail": "Please enter a valid phone number."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     # Relink if same phone already has an active session at this table
-    existing = TableSession.objects.filter(
-        table=table, customer_phone=phone, is_active=True
-    ).first()
+    if phone:
+        existing = TableSession.objects.filter(
+            table=table, customer_phone=phone, is_active=True
+        ).first()
+        if existing:
+            return Response(
+                {"session_id": existing.pk, "customer_name": existing.customer_name},
+                status=status.HTTP_200_OK,
+            )
 
-    if existing:
-        ts = existing
-    else:
-        ts = TableSession.objects.create(
-            table=table, customer_name=name, customer_phone=phone
-        )
-
+    ts = TableSession.objects.create(
+        table=table,
+        customer_name=name or "Guest",
+        customer_phone=phone or "",
+    )
     return Response({"session_id": ts.pk, "customer_name": ts.customer_name}, status=status.HTTP_200_OK)
 
 
@@ -116,13 +108,23 @@ def customer_place_order(request, qr_token):
         return Response({"detail": "Table not found."}, status=status.HTTP_404_NOT_FOUND)
 
     session_id = request.headers.get("X-Session-Id") or request.data.get("session_id")
-    if not session_id:
-        return Response({"detail": "No session."}, status=status.HTTP_401_UNAUTHORIZED)
+    ts = None
 
-    try:
-        ts = TableSession.objects.get(pk=session_id, table=table, is_active=True)
-    except TableSession.DoesNotExist:
-        return Response({"detail": "Session expired."}, status=status.HTTP_401_UNAUTHORIZED)
+    if session_id:
+        try:
+            ts = TableSession.objects.get(pk=session_id, table=table, is_active=True)
+        except TableSession.DoesNotExist:
+            pass  # Session expired — create a new one below
+
+    if ts is None:
+        # Create session on the fly; name/phone are optional
+        name = (request.data.get("customer_name") or "").strip()
+        phone = (request.data.get("customer_phone") or "").strip()
+        ts = TableSession.objects.create(
+            table=table,
+            customer_name=name or "Guest",
+            customer_phone=phone or "",
+        )
 
     cart = request.data.get("cart", [])
     if not cart:
@@ -148,7 +150,10 @@ def customer_place_order(request, qr_token):
             pass
 
     order.calculate_total()
-    return Response(OrderSerializer(order, context={"request": request}).data, status=status.HTTP_201_CREATED)
+    return Response(
+        {**OrderSerializer(order, context={"request": request}).data, "session_id": ts.pk},
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["GET"])

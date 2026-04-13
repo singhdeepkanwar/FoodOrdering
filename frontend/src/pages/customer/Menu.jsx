@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { getCustomerMenu, getCustomerSession, customerPlaceOrder } from "../../api";
-import { ShoppingCart, X, FileText } from "lucide-react";
+import { ShoppingCart, X, FileText, User } from "lucide-react";
 
 const VEG = "border-green-600";
 const NONVEG = "border-red-600";
@@ -27,56 +27,72 @@ export default function CustomerMenu() {
   const [vegOnly, setVegOnly] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [showBill, setShowBill] = useState(false);
+  const [showGuestModal, setShowGuestModal] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
   const [placing, setPlacing] = useState(false);
 
-  // If no session, redirect to checkin
   useEffect(() => {
-    const sid = localStorage.getItem(`session_${qrToken}`);
-    if (!sid) {
-      navigate(`/t/${qrToken}/checkin`, { replace: true });
-      return;
-    }
     getCustomerMenu(qrToken)
       .then(({ data }) => setMenuData(data))
-      .catch(() => navigate(`/t/${qrToken}/checkin`, { replace: true }));
-    getCustomerSession(qrToken)
-      .then(({ data }) => setSession(data))
-      .catch(() => {
-        // Session expired
-        localStorage.removeItem(`session_${qrToken}`);
-        navigate(`/t/${qrToken}/checkin`, { replace: true });
-      });
+      .catch(() => toast.error("Table not found or restaurant is closed."));
+
+    const sid = localStorage.getItem(`session_${qrToken}`);
+    if (sid) {
+      getCustomerSession(qrToken)
+        .then(({ data }) => setSession(data))
+        .catch(() => localStorage.removeItem(`session_${qrToken}`));
+    }
   }, [qrToken]);
 
-  const addToCart = (item) => {
-    setCart((c) => ({
-      ...c,
-      [item.id]: { ...item, qty: (c[item.id]?.qty || 0) + 1 },
-    }));
-  };
-  const dec = (id) => {
+  const addToCart = (item) =>
+    setCart((c) => ({ ...c, [item.id]: { ...item, qty: (c[item.id]?.qty || 0) + 1 } }));
+
+  const dec = (id) =>
     setCart((c) => {
       const qty = (c[id]?.qty || 0) - 1;
       if (qty <= 0) { const n = { ...c }; delete n[id]; return n; }
       return { ...c, [id]: { ...c[id], qty } };
     });
-  };
 
   const totalQty = Object.values(cart).reduce((s, i) => s + i.qty, 0);
   const totalAmount = Object.values(cart).reduce((s, i) => s + parseFloat(i.price) * i.qty, 0);
 
-  const handlePlaceOrder = async () => {
+  // Called from cart drawer "Place Order" button
+  const handlePlaceOrderClick = () => {
     if (!totalQty) return;
+    const sid = localStorage.getItem(`session_${qrToken}`);
+    if (sid) {
+      submitOrder(null, null); // already have a session
+    } else {
+      setShowCart(false);
+      setShowGuestModal(true); // ask optional name/phone
+    }
+  };
+
+  const submitOrder = async (name, phone) => {
     setPlacing(true);
     try {
       const cartItems = Object.values(cart).map((i) => ({ id: i.id, qty: i.qty }));
-      const { data } = await customerPlaceOrder(qrToken, {
+      const sid = localStorage.getItem(`session_${qrToken}`);
+      const payload = {
         cart: cartItems,
         special_instructions: specialInstructions,
-      });
+        ...(sid ? {} : {
+          customer_name: name || "",
+          customer_phone: phone || "",
+        }),
+      };
+      const { data } = await customerPlaceOrder(qrToken, payload);
+
+      // Save session_id returned by backend if it's new
+      if (data.session_id && !sid) {
+        localStorage.setItem(`session_${qrToken}`, data.session_id);
+      }
+
       setCart({});
       setSpecialInstructions("");
-      setShowCart(false);
+      setShowGuestModal(false);
       toast.success("Order placed!");
       navigate(`/t/${qrToken}/confirmation/${data.id}`);
     } catch (err) {
@@ -86,7 +102,11 @@ export default function CustomerMenu() {
     }
   };
 
-  if (!menuData) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading menu…</div>;
+  if (!menuData) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">
+      Loading menu…
+    </div>
+  );
 
   const { restaurant, categories } = menuData;
 
@@ -96,7 +116,10 @@ export default function CustomerMenu() {
       <header className="bg-white shadow-sm px-4 py-3 sticky top-0 z-20 flex items-center justify-between">
         <div>
           <h1 className="font-bold text-gray-800">{restaurant.name}</h1>
-          {session && <p className="text-xs text-gray-500">Hi, {session.customer_name}</p>}
+          {session
+            ? <p className="text-xs text-gray-500">Hi, {session.customer_name}</p>
+            : <p className="text-xs text-gray-400">{menuData.table.name}</p>
+          }
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowBill(true)}
@@ -159,14 +182,10 @@ export default function CustomerMenu() {
                     ) : (
                       <div className="flex items-center gap-1">
                         <button onClick={() => dec(item.id)}
-                          className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold">
-                          −
-                        </button>
+                          className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold">−</button>
                         <span className="text-sm w-5 text-center font-medium">{cart[item.id].qty}</span>
                         <button onClick={() => addToCart(item)}
-                          className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold">
-                          +
-                        </button>
+                          className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold">+</button>
                       </div>
                     )}
                   </div>
@@ -217,12 +236,56 @@ export default function CustomerMenu() {
                   <span>Total</span>
                   <span>₹{totalAmount.toFixed(0)}</span>
                 </div>
-                <button onClick={handlePlaceOrder} disabled={placing}
+                <button onClick={handlePlaceOrderClick} disabled={placing}
                   className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm">
                   {placing ? "Placing order…" : "Place Order"}
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Guest Info Modal */}
+      {showGuestModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowGuestModal(false)} />
+          <div className="relative bg-white w-full max-w-sm rounded-t-2xl sm:rounded-2xl p-6 shadow-xl">
+            <div className="flex items-center gap-2 mb-1">
+              <User size={18} className="text-orange-500" />
+              <h2 className="font-semibold text-gray-800">Who's ordering?</h2>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Optional — helps us call out your order</p>
+            <div className="space-y-3">
+              <input
+                type="text"
+                placeholder="Your name (optional)"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+              <input
+                type="tel"
+                placeholder="Phone number (optional)"
+                value={guestPhone}
+                onChange={(e) => setGuestPhone(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              />
+              <button
+                onClick={() => submitOrder(guestName, guestPhone)}
+                disabled={placing}
+                className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm"
+              >
+                {placing ? "Placing order…" : "Confirm Order"}
+              </button>
+              <button
+                onClick={() => submitOrder("", "")}
+                disabled={placing}
+                className="w-full text-sm text-gray-400 hover:text-gray-600 py-1"
+              >
+                Skip & order as guest
+              </button>
+            </div>
           </div>
         </div>
       )}

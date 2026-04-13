@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { getWaiterTableDetail, waiterAddItems, waiterMarkServed } from "../../api";
-import { ArrowLeft } from "lucide-react";
+import { getWaiterTableDetail, waiterAddItems, waiterMarkServed, waiterCloseTable } from "../../api";
+import { ArrowLeft, XCircle } from "lucide-react";
 
 const STATUS_COLORS = {
   pending: "bg-yellow-100 text-yellow-700",
@@ -77,6 +77,17 @@ export default function WaiterTableDetail() {
     }
   };
 
+  const handleCloseTable = async () => {
+    if (!window.confirm("Close this table? The session will end and the table will be marked vacant.")) return;
+    try {
+      await waiterCloseTable(id);
+      toast.success("Table closed.");
+      navigate("/waiter");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to close table.");
+    }
+  };
+
   if (!data) return <div className="min-h-screen bg-gray-100 p-6 text-sm text-gray-400">Loading…</div>;
 
   const { table, session, orders, categories } = data;
@@ -98,9 +109,18 @@ export default function WaiterTableDetail() {
           </div>
         </div>
         {session && (
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Running bill</p>
-            <p className="font-bold text-orange-600">₹{session.running_total}</p>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Running bill</p>
+              <p className="font-bold text-orange-600">₹{session.running_total}</p>
+            </div>
+            <button
+              onClick={handleCloseTable}
+              className="flex items-center gap-1 text-xs bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-3 py-2 rounded-lg font-medium"
+            >
+              <XCircle size={14} />
+              Close Table
+            </button>
           </div>
         )}
       </header>

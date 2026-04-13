@@ -33,7 +33,7 @@ export default function App() {
           <Route path="/t/:qrToken/menu" element={<CustomerMenu />} />
           <Route path="/t/:qrToken/confirmation/:orderId" element={<CustomerConfirmation />} />
           <Route path="/t/:qrToken/track/:orderId" element={<CustomerTrack />} />
-          <Route path="/t/:qrToken" element={<Navigate to="checkin" replace />} />
+          <Route path="/t/:qrToken" element={<Navigate to="menu" replace />} />
 
           {/* Kitchen (no sidebar layout) */}
           <Route

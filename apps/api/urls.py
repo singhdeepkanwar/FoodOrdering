@@ -38,6 +38,7 @@ urlpatterns = [
     path("waiter/tables/", waiter.waiter_tables, name="waiter-tables"),
     path("waiter/tables/<int:pk>/", waiter.waiter_table_detail, name="waiter-table-detail"),
     path("waiter/tables/<int:pk>/add-items/", waiter.waiter_add_items, name="waiter-add-items"),
+    path("waiter/tables/<int:pk>/close/", waiter.waiter_close_table, name="waiter-close-table"),
     path("waiter/orders/<int:pk>/mark-served/", waiter.mark_served, name="waiter-mark-served"),
 
     # ── Customer (public, no auth) ────────────────────────────────────────────

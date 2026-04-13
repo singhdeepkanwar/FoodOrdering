@@ -120,6 +120,24 @@ def waiter_add_items(request, pk):
 
 @api_view(["POST"])
 @permission_classes([IsWaiterOrAdmin])
+def waiter_close_table(request, pk):
+    restaurant = request.user.restaurant
+    try:
+        table = Table.objects.get(pk=pk, restaurant=restaurant)
+    except Table.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    active_session = TableSession.objects.filter(table=table, is_active=True).first()
+    if not active_session:
+        return Response({"detail": "Table is already vacant."}, status=status.HTTP_400_BAD_REQUEST)
+
+    active_session.is_active = False
+    active_session.save(update_fields=["is_active"])
+    return Response({"detail": "Table closed."})
+
+
+@api_view(["POST"])
+@permission_classes([IsWaiterOrAdmin])
 def mark_served(request, pk):
     restaurant = request.user.restaurant
     try:
